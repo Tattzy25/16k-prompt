@@ -2,6 +2,8 @@ export type BatchStatus = 'idle' | 'uploading' | 'processing' | 'completed' | 'f
 
 export type ImageStatus = 'pending' | 'processing' | 'completed' | 'failed'
 
+export type QueueDensity = 'compact' | 'comfortable'
+
 export interface ImageFile {
   id: string
   file: File
@@ -33,4 +35,10 @@ export interface ProcessingResult {
   success: boolean
   data: ResultRow
   error?: string
+}
+
+export interface UISettings {
+  queueDensity: QueueDensity
+  showCompletedImages: boolean
+  resultsPageSize: number
 }
