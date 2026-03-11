@@ -447,19 +447,13 @@ export default function BatchProcessor() {
               )}
             </div>
 
-            {/* Right Column - Gallery & Results */}
+            {/* Right Column - Gallery */}
             <div className="space-y-6 lg:col-span-2">
               <ImageGallery
                 images={images}
                 status={status}
                 currentProcessingIndex={currentProcessingIndex}
                 onRemoveImage={handleRemoveImage}
-              />
-
-              <ResultsTable
-                data={results}
-                onExportCSV={exportCSV}
-                onExportJSON={exportJSON}
               />
 
               {/* Empty State */}
@@ -487,6 +481,15 @@ export default function BatchProcessor() {
                 </div>
               )}
             </div>
+          </div>
+
+          {/* Results Table - Full Width Below Upload & Gallery */}
+          <div className="mt-6">
+            <ResultsTable
+              data={results}
+              onExportCSV={exportCSV}
+              onExportJSON={exportJSON}
+            />
           </div>
         </div>
       </div>
