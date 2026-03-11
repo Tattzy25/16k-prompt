@@ -29,7 +29,8 @@ export function ImageGallery({ images, status, currentProcessingIndex, onRemoveI
     return null
   }
 
-  const canRemove = status === 'idle' || status === 'uploading'
+  // Allow removing images whenever they are not the one currently processing.
+  const canRemoveAny = status !== 'processing'
 
   return (
     <div className="space-y-3">
@@ -55,7 +56,7 @@ export function ImageGallery({ images, status, currentProcessingIndex, onRemoveI
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-3 sm:grid-cols-6 md:grid-cols-8 lg:grid-cols-10">
+      <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
         {images.map((image, index) => {
           const isCurrentlyProcessing = status === 'processing' && index === currentProcessingIndex
           const isPending = image.status === 'pending'
@@ -81,7 +82,7 @@ export function ImageGallery({ images, status, currentProcessingIndex, onRemoveI
                 )} 
               />
 
-              {canRemove && (
+              {(canRemoveAny || !isCurrentlyProcessing) && (
                 <button
                   onClick={() => onRemoveImage(image.id)}
                   className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-background/80 text-foreground opacity-0 backdrop-blur-sm transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover:opacity-100"
@@ -125,8 +126,10 @@ export function ImageGallery({ images, status, currentProcessingIndex, onRemoveI
               {/* Failed indicator */}
               {isFailed && (
                 <div className="absolute bottom-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive/90">
-                  <svg className="h-3 w-3 text-destructive-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+                  <svg className="h-3 w-3 text-destructive-foreground" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v7" strokeLinecap="round" />
+                    <path d="M12 16.5h.01" strokeLinecap="round" />
                   </svg>
                 </div>
               )}

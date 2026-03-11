@@ -31,9 +31,15 @@ export function StatusCards({
   const getStatusIndex = (status: BatchStatus) => statuses.findIndex(s => s.key === status)
   const currentIndex = getStatusIndex(currentStatus)
 
+  // Hide the "Failed" card unless the batch has actually failed
+  const visibleStatuses =
+    currentStatus === 'failed'
+      ? statuses
+      : statuses.filter(status => status.key !== 'failed')
+
   return (
-    <div className="grid grid-cols-5 gap-3">
-      {statuses.map((status, index) => {
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-5 justify-items-center">
+      {visibleStatuses.map((status, index) => {
         const isActive = status.key === currentStatus
         const isPast = index < currentIndex && currentStatus !== 'failed'
         const isFailed = status.key === 'failed' && currentStatus === 'failed'

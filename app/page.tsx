@@ -6,6 +6,7 @@ import { ImageDropzone } from '@/components/image-dropzone'
 import { ImageGallery } from '@/components/image-gallery'
 import { ResultsTable } from '@/components/results-table'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { SettingsPanel } from '@/components/settings-panel'
 import type { BatchStatus, ImageFile, ResultRow } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
@@ -19,6 +20,7 @@ export default function BatchProcessor() {
   const [error, setError] = useState<string | null>(null)
   const [currentProcessingIndex, setCurrentProcessingIndex] = useState(-1)
   const abortControllerRef = useRef<AbortController | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
 
   const handleImagesAdded = useCallback((newImages: ImageFile[]) => {
     const imagesWithStatus = newImages.map(img => ({
@@ -88,6 +90,7 @@ export default function BatchProcessor() {
     abortControllerRef.current = new AbortController()
 
     const newResults: ResultRow[] = [...results]
+    let consecutiveFailures = 0
 
     for (let i = startFromIndex; i < images.length; i++) {
       const image = images[i]
@@ -164,16 +167,26 @@ export default function BatchProcessor() {
         ))
         newResults.push(resultData)
         setResults([...newResults])
+        consecutiveFailures = 0
       } else {
         // Mark as failed
         setImages(prev => prev.map((img, idx) => 
           idx === i ? { ...img, status: 'failed' as const, error: lastError } : img
         ))
-        setError(`Image "${image.name}" failed after ${MAX_RETRIES} retries: ${lastError}`)
-        setCurrentProcessingIndex(-1)
-        setStatus('failed')
         setBatchRetryCount(prev => prev + 1)
-        return
+        consecutiveFailures += 1
+
+        // If two images in a row hit max retries, stop the workflow
+        if (consecutiveFailures >= 2) {
+          setError(`Image "${image.name}" failed after ${MAX_RETRIES} retries: ${lastError}`)
+          setCurrentProcessingIndex(-1)
+          setStatus('failed')
+          return
+        }
+
+        // Otherwise, move on to the next image without exposing a bogus "Retry Failed" message
+        setError(`Image "${image.name}" failed after ${MAX_RETRIES} retries and was skipped: ${lastError}`)
+        continue
       }
     }
 
@@ -279,6 +292,34 @@ export default function BatchProcessor() {
               </p>
             </div>
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(true)}
+                className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/50 bg-card/50 text-foreground backdrop-blur-sm transition-colors hover:bg-accent"
+                aria-label="Open settings"
+              >
+                <svg
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                >
+                  <path
+                    d="M12 9.75A2.25 2.25 0 1 0 12 14.25 2.25 2.25 0 0 0 12 9.75Z"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M4.5 12.75H3.75a.75.75 0 0 1 0-1.5H4.5m15 1.5h.75a.75.75 0 0 0 0-1.5H19.5m-4.318-5.182.53-.53a.75.75 0 0 0-1.06-1.06l-.53.53M9.318 17.432l-.53.53a.75.75 0 1 0 1.06 1.06l.53-.53m0-11.122-.53-.53a.75.75 0 1 0-1.06 1.06l.53.53m4.364 9.394.53.53a.75.75 0 0 1-1.06 1.06l-.53-.53"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
               <ThemeToggle />
               {canRetry && (
                 <button
@@ -491,6 +532,8 @@ export default function BatchProcessor() {
               onExportJSON={exportJSON}
             />
           </div>
+
+          <SettingsPanel open={settingsOpen} onOpenChange={setSettingsOpen} />
         </div>
       </div>
     </main>
