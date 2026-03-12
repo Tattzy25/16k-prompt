@@ -32,6 +32,14 @@ const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
   { key: 'Prompt', displayName: 'Prompt', visible: true },
   { key: 'Title', displayName: 'Title', visible: true },
   { key: 'Style', displayName: 'Style', visible: true },
+  // System columns hidden by default
+  { key: 'image_name', displayName: 'Image Name', visible: false },
+  { key: 'image_url', displayName: 'Image URL', visible: false },
+  { key: 'blob_storage_enabled', displayName: 'Blob Storage Enabled', visible: false },
+  { key: 'workflow_run_id', displayName: 'Workflow Run ID', visible: false },
+  { key: 'user_id', displayName: 'User ID', visible: false },
+  { key: 'elapsed_time', displayName: 'Elapsed Time', visible: false },
+  { key: 'blob_upload_error', displayName: 'Blob Upload Error', visible: false },
 ]
 
 function loadSettings(): ColumnSettings {
@@ -146,17 +154,41 @@ export function SettingsPanel({
   }
 
   const handleDeleteColumn = (key: string) => {
-    setMappings(mappings.filter((m) => m.key !== key))
-    setCustomColumns(customColumns.filter((c) => c !== key))
+    // If column is a custom column, remove it entirely
+    if (customColumns.includes(key)) {
+      setMappings(mappings.filter((m) => m.key !== key))
+      setCustomColumns(customColumns.filter((c) => c !== key))
+    } else {
+      // For non-custom columns (from API), hide them by setting visible false
+      const existing = mappings.find(m => m.key === key);
+      if (existing) {
+        setMappings(mappings.map(m => m.key === key ? { ...m, visible: false } : m));
+      } else {
+        // Add mapping with visible false
+        setMappings([...mappings, { key, displayName: key, visible: false }]);
+      }
+    }
     if (previewColumn === key) setPreviewColumn(null)
   }
 
   const handleToggleVisibility = (key: string) => {
-    setMappings(mappings.map((m) => m.key === key ? { ...m, visible: !m.visible } : m))
+    const existing = mappings.find(m => m.key === key);
+    if (existing) {
+      setMappings(mappings.map(m => m.key === key ? { ...m, visible: !m.visible } : m));
+    } else {
+      // Add new mapping with visible false (since currently it's visible true)
+      setMappings([...mappings, { key, displayName: key, visible: false }]);
+    }
   }
 
   const handleDisplayNameChange = (key: string, newName: string) => {
-    setMappings(mappings.map((m) => m.key === key ? { ...m, displayName: newName } : m))
+    const existing = mappings.find(m => m.key === key);
+    if (existing) {
+      setMappings(mappings.map(m => m.key === key ? { ...m, displayName: newName } : m));
+    } else {
+      // Add new mapping with visible true (default) and custom display name
+      setMappings([...mappings, { key, displayName: newName, visible: true }]);
+    }
   }
 
   const handleReset = () => {
@@ -170,7 +202,7 @@ export function SettingsPanel({
 
   const handleSave = () => {
     const settings: ColumnSettings = {
-      mappings: getAllColumns().filter((m) => m.visible || m.displayName !== m.key),
+      mappings: getAllColumns(), // Save all columns, including hidden ones
       customColumns,
     }
     const uiSettings: UISettings = {

@@ -52,10 +52,37 @@ export default function BatchProcessor() {
   const [uiSettings, setUiSettings] = useState<UISettings>(DEFAULT_UI_SETTINGS)
   const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking')
 
-  // Initialize UI settings on mount
+  // Initialize UI settings and column settings on mount
   useEffect(() => {
     const loaded = loadUISettings()
     setUiSettings(loaded)
+    
+    // Load column settings from localStorage
+    try {
+      const stored = localStorage.getItem('batch-processor-column-settings')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        setColumnSettings(parsed)
+      } else {
+        // Default column mappings (same as in settings-panel.tsx)
+        const defaultMappings = [
+          { key: 'Prompt', displayName: 'Prompt', visible: true },
+          { key: 'Title', displayName: 'Title', visible: true },
+          { key: 'Style', displayName: 'Style', visible: true },
+          // System columns hidden by default
+          { key: 'image_name', displayName: 'Image Name', visible: false },
+          { key: 'image_url', displayName: 'Image URL', visible: false },
+          { key: 'blob_storage_enabled', displayName: 'Blob Storage Enabled', visible: false },
+          { key: 'workflow_run_id', displayName: 'Workflow Run ID', visible: false },
+          { key: 'user_id', displayName: 'User ID', visible: false },
+          { key: 'elapsed_time', displayName: 'Elapsed Time', visible: false },
+          { key: 'blob_upload_error', displayName: 'Blob Upload Error', visible: false },
+        ]
+        setColumnSettings({ mappings: defaultMappings, customColumns: [] })
+      }
+    } catch (e) {
+      console.error('Failed to load column settings:', e)
+    }
     
     // Check API status on mount
     checkApiStatus()
