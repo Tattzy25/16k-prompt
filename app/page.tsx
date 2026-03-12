@@ -618,6 +618,7 @@ export default function BatchProcessor() {
             blobStorageEnabled={uiSettings.blobStorageEnabled}
             tablePageSize={uiSettings.tablePageSize}
             apiStatus={apiStatus}
+            resultsData={results}
           />
         </div>
       </div>

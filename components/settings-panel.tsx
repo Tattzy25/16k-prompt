@@ -5,17 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Badge } from '@/components/ui/badge'
-import type { ColumnMapping, ColumnSettings, TablePageSize } from '@/lib/types'
+import type { ColumnMapping, ColumnSettings, TablePageSize, ResultRow } from '@/lib/types'
 
 interface SettingsPanelProps {
   open: boolean
@@ -26,6 +17,7 @@ interface SettingsPanelProps {
   blobStorageEnabled?: boolean
   tablePageSize?: TablePageSize
   apiStatus?: 'connected' | 'disconnected' | 'checking'
+  resultsData?: ResultRow[]
 }
 
 interface UISettings {
@@ -36,19 +28,23 @@ interface UISettings {
 const STORAGE_KEY = 'batch-processor-column-settings'
 const UI_SETTINGS_KEY = 'batch-processor-ui-settings'
 
+const DEFAULT_COLUMN_MAPPINGS: ColumnMapping[] = [
+  { key: 'Prompt', displayName: 'Prompt', visible: true },
+  { key: 'Title', displayName: 'Title', visible: true },
+  { key: 'Style', displayName: 'Style', visible: true },
+]
+
 function loadSettings(): ColumnSettings {
   if (typeof window === 'undefined') {
     return { mappings: [], customColumns: [] }
   }
   try {
     const stored = localStorage.getItem(STORAGE_KEY)
-    if (stored) {
-      return JSON.parse(stored)
-    }
+    if (stored) return JSON.parse(stored)
   } catch (e) {
     console.error('Failed to load settings:', e)
   }
-  return { mappings: [], customColumns: [] }
+  return { mappings: DEFAULT_COLUMN_MAPPINGS, customColumns: [] }
 }
 
 function saveSettings(settings: ColumnSettings) {
@@ -65,9 +61,7 @@ function loadUISettings(): UISettings {
   }
   try {
     const stored = localStorage.getItem(UI_SETTINGS_KEY)
-    if (stored) {
-      return JSON.parse(stored)
-    }
+    if (stored) return JSON.parse(stored)
   } catch (e) {
     console.error('Failed to load UI settings:', e)
   }
@@ -83,10 +77,10 @@ function saveUISettings(settings: UISettings) {
 }
 
 const PAGE_SIZE_OPTIONS: { value: TablePageSize; label: string }[] = [
-  { value: 25, label: '25 rows' },
-  { value: 50, label: '50 rows' },
-  { value: 100, label: '100 rows' },
-  { value: 200, label: '200 rows' },
+  { value: 25, label: '25' },
+  { value: 50, label: '50' },
+  { value: 100, label: '100' },
+  { value: 200, label: '200' },
 ]
 
 export function SettingsPanel({
@@ -98,24 +92,42 @@ export function SettingsPanel({
   blobStorageEnabled: initialBlobEnabled = true,
   tablePageSize: initialPageSize = 50,
   apiStatus = 'checking',
+  resultsData = [],
 }: SettingsPanelProps) {
   const [mappings, setMappings] = useState<ColumnMapping[]>([])
   const [customColumns, setCustomColumns] = useState<string[]>([])
   const [newColumnKey, setNewColumnKey] = useState('')
   const [blobEnabled, setBlobEnabled] = useState(true)
   const [pageSize, setPageSize] = useState<TablePageSize>(50)
+  const [previewColumn, setPreviewColumn] = useState<string | null>(null)
 
-  // Initialize from props when dialog opens
   useEffect(() => {
     if (open) {
-      setMappings([...columnSettings.mappings])
-      setCustomColumns([...columnSettings.customColumns])
+      const savedSettings = loadSettings()
+      setMappings([...savedSettings.mappings])
+      setCustomColumns([...savedSettings.customColumns])
       setBlobEnabled(initialBlobEnabled)
       setPageSize(initialPageSize)
+      setPreviewColumn(null)
     }
-  }, [open, columnSettings, initialBlobEnabled, initialPageSize])
+  }, [open, initialBlobEnabled, initialPageSize])
 
-  // Sync available columns that aren't in mappings yet
+  const getColumnSampleData = (key: string): string[] => {
+    if (!resultsData || resultsData.length === 0) return []
+    const samples: string[] = []
+    for (const row of resultsData) {
+      const value = row[key]
+      if (value !== null && value !== undefined) {
+        const strValue = typeof value === 'object' ? JSON.stringify(value) : String(value)
+        if (strValue && strValue !== '-' && strValue.length > 0) {
+          samples.push(strValue.substring(0, 60))
+          if (samples.length >= 2) break
+        }
+      }
+    }
+    return samples
+  }
+
   const getAllColumns = () => {
     const mappedKeys = new Set(mappings.map((m) => m.key))
     const available = availableColumns
@@ -128,38 +140,32 @@ export function SettingsPanel({
     if (newColumnKey.trim() && !customColumns.includes(newColumnKey.trim())) {
       const key = newColumnKey.trim()
       setCustomColumns([...customColumns, key])
-      setMappings([
-        ...mappings,
-        { key, displayName: key, visible: true },
-      ])
+      setMappings([...mappings, { key, displayName: key, visible: true }])
       setNewColumnKey('')
     }
   }
 
-  const handleRemoveColumn = (key: string) => {
+  const handleDeleteColumn = (key: string) => {
     setMappings(mappings.filter((m) => m.key !== key))
     setCustomColumns(customColumns.filter((c) => c !== key))
+    if (previewColumn === key) setPreviewColumn(null)
   }
 
   const handleToggleVisibility = (key: string) => {
-    setMappings(
-      mappings.map((m) =>
-        m.key === key ? { ...m, visible: !m.visible } : m
-      )
-    )
+    setMappings(mappings.map((m) => m.key === key ? { ...m, visible: !m.visible } : m))
   }
 
   const handleDisplayNameChange = (key: string, newName: string) => {
-    setMappings(
-      mappings.map((m) =>
-        m.key === key ? { ...m, displayName: newName } : m
-      )
-    )
+    setMappings(mappings.map((m) => m.key === key ? { ...m, displayName: newName } : m))
   }
 
   const handleReset = () => {
-    setMappings([])
+    setMappings([...DEFAULT_COLUMN_MAPPINGS])
     setCustomColumns([])
+  }
+
+  const handleRefresh = () => {
+    window.location.reload()
   }
 
   const handleSave = () => {
@@ -179,271 +185,188 @@ export function SettingsPanel({
 
   const allColumns = getAllColumns()
 
-  // Get status color and text
   const getStatusInfo = () => {
     switch (apiStatus) {
       case 'connected':
-        return { color: 'bg-green-500', text: 'Connected', desc: 'API is responding normally' }
+        return { color: 'bg-green-500', text: 'Connected' }
       case 'disconnected':
-        return { color: 'bg-red-500', text: 'Disconnected', desc: 'Cannot reach the API' }
+        return { color: 'bg-red-500', text: 'Disconnected' }
       default:
-        return { color: 'bg-yellow-500', text: 'Checking...', desc: 'Testing connection...' }
+        return { color: 'bg-yellow-500', text: 'Checking...' }
     }
   }
 
   const statusInfo = getStatusInfo()
+  const previewSamples = previewColumn ? getColumnSampleData(previewColumn) : []
+
+  if (!open) return null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl w-full gap-6 p-6 sm:p-8" showCloseButton>
-        <DialogHeader>
-          <DialogTitle className="text-xl">⚙️ Settings</DialogTitle>
-          <DialogDescription>
-            Configure your batch processor settings. Changes are saved automatically.
-          </DialogDescription>
-        </DialogHeader>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div className="absolute inset-0 bg-black/50" onClick={() => onOpenChange(false)} />
+      
+      {/* Panel */}
+      <div className="relative w-full max-w-3xl bg-background rounded-2xl shadow-2xl flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="flex-shrink-0 px-6 py-4 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <svg className="w-5 h-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 0 1 0 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 0 1-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 0 1 0-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.281Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-lg font-bold">Settings</h2>
+              <div className="flex items-center gap-2 text-xs">
+                <span className={`w-2 h-2 rounded-full ${statusInfo.color}`} />
+                <span className="text-muted-foreground">{statusInfo.text}</span>
+                <button onClick={handleRefresh} className="text-primary hover:underline ml-1">Refresh</button>
+              </div>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={() => onOpenChange(false)}>
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+            </svg>
+          </Button>
+        </div>
 
-        <ScrollArea className="max-h-[65vh] pr-3">
-          <div className="space-y-8">
-            {/* Connection Status Section */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.111 16.404a5.5 5.5 0 0 1 7.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0" />
-                </svg>
-                Connection Status
-              </h2>
-              
-              <div className="flex items-center gap-4 rounded-lg border border-border bg-card p-4">
-                <div className={`h-3 w-3 rounded-full ${statusInfo.color} animate-pulse`} />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">{statusInfo.text}</p>
-                  <p className="text-xs text-muted-foreground">{statusInfo.desc}</p>
+        {/* Content - with custom scroll */}
+        <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'transparent transparent' }}>
+          <div className="p-6 space-y-6">
+            {/* Top Row: Blob Toggle + Rows */}
+            <div className="flex flex-wrap items-center gap-6 p-4 bg-card border border-border rounded-xl">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-3">
+                  <Switch id="blob-toggle" checked={blobEnabled} onCheckedChange={setBlobEnabled} />
+                  <Label htmlFor="blob-toggle" className="font-medium">Blob Storage</Label>
                 </div>
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => window.location.reload()}
-                  className="text-xs"
+                <span className="text-xs text-muted-foreground">
+                  {blobEnabled ? '✅ On' : '⚠️ Off'}
+                </span>
+              </div>
+              <div className="w-px h-8 bg-border" />
+              <div className="flex items-center gap-3">
+                <Label htmlFor="page-size" className="font-medium">Rows:</Label>
+                <select
+                  id="page-size"
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value) as TablePageSize)}
+                  className="h-8 rounded-md border border-border bg-background px-3 text-sm"
                 >
-                  Refresh
-                </Button>
+                  {PAGE_SIZE_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
               </div>
-            </section>
+            </div>
 
-            {/* Storage Settings Section */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
-                </svg>
-                Storage Settings
-              </h2>
-              
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="blob-toggle" className="text-sm font-medium">
-                      Blob Storage
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      Upload processed images to cloud storage
-                    </p>
-                  </div>
-                  <Switch
-                    id="blob-toggle"
-                    checked={blobEnabled}
-                    onCheckedChange={setBlobEnabled}
-                  />
-                </div>
-                
-                <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                  {blobEnabled ? (
-                    <p>✅ <strong>Enabled:</strong> Processed images will be uploaded to Vercel Blob storage and you'll get public URLs in your results.</p>
-                  ) : (
-                    <p>⚠️ <strong>Disabled:</strong> Images will be processed but NOT uploaded to cloud storage. Results will only contain metadata.</p>
-                  )}
-                </div>
-              </div>
-            </section>
+            {/* Default Headers */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-muted-foreground">Defaults:</span>
+              <Badge variant="outline">Prompt</Badge>
+              <Badge variant="outline">Title</Badge>
+              <Badge variant="outline">Style</Badge>
+              <Button variant="ghost" size="sm" onClick={handleReset} className="ml-2 text-xs">Reset</Button>
+            </div>
 
-            {/* Table Settings Section */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 0 1-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0 1 12 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m17.25-3.75h-7.5c-.621 0-1.125.504-1.125 1.125m8.625-1.125c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M12 10.875v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125M13.125 12h7.5m-7.5 0c-.621 0-1.125.504-1.125 1.125M20.625 12c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h7.5M12 14.625v-1.5m0 1.5c0 .621-.504 1.125-1.125 1.125M12 14.625c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m0 1.5v-1.5m0 0c0-.621.504-1.125 1.125-1.125m0 2.625h7.5" />
-                </svg>
-                Table Display
-              </h2>
-              
-              <div className="rounded-lg border border-border bg-card p-4 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <Label htmlFor="page-size" className="text-sm font-medium">
-                      Rows per page
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      How many results to show at once
-                    </p>
-                  </div>
-                  <select
-                    id="page-size"
-                    value={pageSize}
-                    onChange={(e) => setPageSize(Number(e.target.value) as TablePageSize)}
-                    className="h-9 rounded-md border border-border bg-background px-3 py-1 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    {PAGE_SIZE_OPTIONS.map(option => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                
-                <p className="text-xs text-muted-foreground">
-                  💡 Tip: Smaller numbers load faster when you have many results (500+ rows)
-                </p>
-              </div>
-            </section>
-
-            {/* Column Settings Section */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            {/* Column Mapping - BIG SECTION */}
+            <div className="space-y-4">
+              <h3 className="text-base font-semibold flex items-center gap-2">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25H12" />
                 </svg>
-                Column Visibility
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                Choose which columns to show in your results table. Toggle visibility or rename columns.
-              </p>
-
-              <div className="rounded-md border border-border max-h-[200px] overflow-y-auto">
-                {allColumns.length === 0 ? (
-                  <div className="p-4 text-center text-sm text-muted-foreground">
-                    No columns available yet. Process some images first!
+                Column Mapping
+              </h3>
+              
+              <div className="bg-card border border-border rounded-xl overflow-hidden">
+                {/* Table Headers Row */}
+                <div className="bg-muted/50 px-4 py-2 border-b border-border flex items-center justify-between">
+                  <div className="flex items-center gap-4 text-sm font-medium">
+                    <span className="w-12">Show</span>
+                    <span className="w-32">Data Column</span>
+                    <span className="w-32">Display As</span>
                   </div>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead className="sticky top-0 bg-muted/50">
-                      <tr className="border-b border-border">
-                        <th className="px-3 py-2 text-left font-medium text-xs">Show</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs">Column Name</th>
-                        <th className="px-3 py-2 text-left font-medium text-xs">Display As</th>
-                        <th className="px-3 py-2 text-right font-medium text-xs"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allColumns.map((col) => (
-                        <tr key={col.key} className="border-b border-border/50">
-                          <td className="px-3 py-2">
-                            <Switch
-                              checked={col.visible}
-                              onCheckedChange={() => handleToggleVisibility(col.key)}
-                              className="h-4 w-7"
-                            />
-                          </td>
-                          <td className="px-3 py-2">
-                            <code className="text-[10px] bg-muted px-1.5 py-0.5 rounded">
-                              {col.key}
-                            </code>
-                          </td>
-                          <td className="px-3 py-2">
-                            <Input
-                              value={col.displayName}
-                              onChange={(e) => handleDisplayNameChange(col.key, e.target.value)}
-                              className="h-7 text-xs"
-                              placeholder="Display name"
-                            />
-                          </td>
-                          <td className="px-3 py-2 text-right">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleRemoveColumn(col.key)}
-                              className="h-6 text-xs text-destructive hover:text-destructive"
-                            >
-                              Hide
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-            </section>
-
-            {/* Add Custom Column */}
-            <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight">Add Custom Column</h2>
-              <p className="text-xs text-muted-foreground">
-                Add a custom column header if you need one that doesn't exist in the data yet.
-              </p>
-
-              <div className="flex gap-2">
-                <Input
-                  value={newColumnKey}
-                  onChange={(e) => setNewColumnKey(e.target.value)}
-                  placeholder="e.g., Meta Keywords, Custom Note..."
-                  className="h-9"
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
-                />
-                <Button onClick={handleAddColumn} size="sm">
-                  Add
-                </Button>
-              </div>
-
-              {customColumns.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {customColumns.map((col) => (
-                    <Badge key={col} variant="secondary" className="gap-1 text-xs">
-                      {col}
-                      <button
-                        onClick={() => handleRemoveColumn(col)}
-                        className="ml-1 hover:text-destructive"
-                      >
-                        ×
-                      </button>
-                    </Badge>
-                  ))}
+                  <span className="w-16 text-sm text-muted-foreground">Action</span>
                 </div>
-              )}
-            </section>
 
-            {/* Help Section for Non-Tech Users */}
-            <section className="space-y-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 p-4 border border-blue-200 dark:border-blue-800">
-              <h2 className="text-base font-semibold text-blue-900 dark:text-blue-100 flex items-center gap-2">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.879 7.519c1.171-1.025 3.071-1.025 4.242 0 1.172 1.025 1.172 2.687 0 3.712-.203.179-.43.326-.67.442-.745.361-1.45.999-1.45 1.827v.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 5.25h.008v.008H12v-.008Z" />
-                </svg>
-                Quick Help
-              </h2>
-              <ul className="list-disc space-y-1 pl-5 text-xs text-blue-800 dark:text-blue-200">
-                <li><strong>Blob Storage:</strong> Keep ON to save processed images to the cloud. Turn OFF if you only want text data.</li>
-                <li><strong>Rows per page:</strong> Use smaller numbers (25-50) if the page feels slow with many results.</li>
-                <li><strong>Columns:</strong> Hide columns you don't need to make the table easier to read.</li>
-                <li><strong>Export:</strong> Use CSV or JSON buttons above the table to download your data.</li>
-              </ul>
-            </section>
-          </div>
-        </ScrollArea>
+                {/* Column Rows */}
+                <div className="max-h-[300px] overflow-y-auto">
+                  {allColumns.length === 0 ? (
+                    <div className="p-6 text-center text-muted-foreground">
+                      Process images to see data columns
+                    </div>
+                  ) : (
+                    allColumns.map((col) => (
+                      <div key={col.key} className="px-4 py-3 border-b border-border/50 flex items-center gap-4 hover:bg-muted/30">
+                        <div className="w-12">
+                          <Switch checked={col.visible} onCheckedChange={() => handleToggleVisibility(col.key)} />
+                        </div>
+                        <div className="w-32">
+                          <button 
+                            onClick={() => setPreviewColumn(previewColumn === col.key ? null : col.key)}
+                            className="text-left"
+                          >
+                            <code className="text-xs bg-muted px-2 py-1 rounded block truncate">{col.key}</code>
+                            {previewColumn === col.key && previewSamples.length > 0 && (
+                              <div className="mt-1 p-2 bg-muted rounded text-xs">
+                                <span className="text-muted-foreground">Sample:</span>
+                                {previewSamples.map((s, i) => (
+                                  <div key={i} className="truncate">{s}</div>
+                                ))}
+                              </div>
+                            )}
+                          </button>
+                        </div>
+                        <div className="w-32">
+                          <Input 
+                            value={col.displayName} 
+                            onChange={(e) => handleDisplayNameChange(col.key, e.target.value)} 
+                            className="h-8 text-sm" 
+                          />
+                        </div>
+                        <div className="w-16 flex justify-end">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            onClick={() => handleDeleteColumn(col.key)}
+                            className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                          >
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
 
-        <DialogFooter className="gap-2 sm:justify-between">
-          <Button variant="outline" size="sm" onClick={handleReset}>
-            Reset Columns
-          </Button>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={handleSave}>
-              Save Settings
-            </Button>
+                {/* Add Column */}
+                <div className="px-4 py-3 border-t border-border bg-muted/30 flex gap-2">
+                  <Input 
+                    value={newColumnKey} 
+                    onChange={(e) => setNewColumnKey(e.target.value)} 
+                    placeholder="Add new column header..." 
+                    className="h-8 text-sm flex-1"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()} 
+                  />
+                  <Button onClick={handleAddColumn} size="sm">Add</Button>
+                </div>
+              </div>
+            </div>
           </div>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+
+        {/* Footer */}
+        <div className="flex-shrink-0 px-6 py-4 border-t border-border flex justify-end gap-2">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={handleSave}>Save</Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
