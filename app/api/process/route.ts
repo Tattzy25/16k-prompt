@@ -9,9 +9,15 @@ const DIFY_API_BASE = 'https://api.dify.ai/v1'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { image } = body as {
+    const { image, options } = body as {
       image: { name: string; base64: string }
+      options?: {
+        enableBlobStorage?: boolean
+      }
     }
+
+    // Default to true if not specified
+    const enableBlobStorage = options?.enableBlobStorage !== false
 
     const apiKey = process.env.DIFY_API_KEY
     if (!apiKey) {
@@ -148,22 +154,35 @@ export async function POST(request: NextRequest) {
     const cleanTitle = (title || 'untitled').replace(/[^a-zA-Z0-9-_\s]/g, '').replace(/\s+/g, '_').substring(0, 50)
     const cleanSku = (sku || Date.now().toString()).replace(/[^a-zA-Z0-9-_]/g, '').substring(0, 20)
     
-    // Step 3: Upload to Vercel Blob with proper name: {title}_{sku}.{ext}
-    const finalFilename = `products/${cleanTitle}_${cleanSku}.${ext}`
-    console.log('[v0] Uploading to Blob:', finalFilename)
-    
-    const finalBlob = await put(finalFilename, imageBuffer, {
-      access: 'public',
-      contentType: mimeType,
-      allowOverwrite: true, // Overwrite if same name exists
-    })
-    
-    console.log('[v0] Blob uploaded:', finalBlob.url)
-
     // Build the final result object with all fields
     const mappedResult: Record<string, string> = {
       image_name: image.name,
-      image_url: finalBlob.url,
+    }
+    
+    // Step 3: Conditionally upload to Vercel Blob
+    if (enableBlobStorage) {
+      try {
+        const finalFilename = `products/${cleanTitle}_${cleanSku}.${ext}`
+        console.log('[v0] Uploading to Blob:', finalFilename)
+        
+        const finalBlob = await put(finalFilename, imageBuffer, {
+          access: 'public',
+          contentType: mimeType,
+          allowOverwrite: true,
+        })
+        
+        console.log('[v0] Blob uploaded:', finalBlob.url)
+        mappedResult.image_url = finalBlob.url
+      } catch (blobError) {
+        console.error('[v0] Blob upload failed:', blobError)
+        // Continue without failing - just won't have image URL
+        mappedResult.image_url = ''
+        mappedResult.blob_upload_error = blobError instanceof Error ? blobError.message : 'Unknown blob error'
+      }
+    } else {
+      // Blob storage disabled - just set empty URL
+      mappedResult.image_url = '[Blob Storage Disabled]'
+      console.log('[v0] Blob storage disabled, skipping upload')
     }
     
     // Map all expected fields - try multiple key formats
@@ -207,6 +226,7 @@ export async function POST(request: NextRequest) {
       workflow_run_id: result.workflow_run_id,
       user_id: userId,
       elapsed_time: result.data?.elapsed_time,
+      blob_storage_enabled: enableBlobStorage,
     })
   } catch (error) {
     console.error('[v0] Process error:', error)
@@ -214,3 +234,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: message }, { status: 500 })
   }
 }
+

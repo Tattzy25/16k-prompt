@@ -1,32 +1,38 @@
-# Settings Panel Update Plan
+# TODO: Batch Processor UI & Settings Improvements
 
-## Files to Edit
+## Task Summary
+Update the batch processor to:
+1. Fix table becoming too long with 500+ images - add internal scroll with sticky header and pagination ✅
+2. Add blob storage toggle in settings to enable/disable Vercel Blob uploads ✅
+3. Enhance settings panel with more user-friendly options for non-tech users ✅
 
-### 1. lib/types.ts
-- Add `ColumnMapping` interface for header mapping
-- Add `UISettings` updates for column configuration
+---
 
-### 2. components/settings-panel.tsx
-- Replace textarea notes with real column management UI
-- Add column list with add/remove functionality
-- Add header mapping (rename) functionality
-- Add Save/Cancel buttons
-- Add "Reset to defaults" option
+## Completed Implementation
 
-### 3. app/page.tsx
-- Add column settings state management
-- Pass settings to SettingsPanel and ResultsTable
+### ✅ Phase 1: Table Improvements (results-table.tsx)
+- Added internal scrolling with fixed/sticky header
+- Implemented pagination with configurable page size (25, 50, 100, 200 rows)
+- Added "Rows per page" selector dropdown
+- Improved column header styling for better UX
 
-### 4. components/results-table.tsx
-- Accept column settings props
-- Filter columns based on settings
-- Display mapped names instead of original keys
-- Support hidden columns
+### ✅ Phase 2: Settings Panel Enhancement (settings-panel.tsx)
+- Added "Blob Storage" toggle section
+- Added "Connection Status" indicator showing API connectivity
+- Added "Page Size" setting for table pagination
+- Improved UX with better descriptions for non-tech users
+- Added help section with quick tips for non-tech users
 
-## UI Components Needed in SettingsPanel
-1. Column list with visibility toggle (show/hide)
-2. Column rename/mapping input
-3. Add custom column button
-4. Remove column button
-5. Save/Cancel/Reset buttons
+### ✅ Phase 3: Settings Persistence & Types (lib/types.ts)
+- Added new UISettings fields: blobStorageEnabled, tablePageSize
+- Added TablePageSize type
+
+### ✅ Phase 4: Backend Integration (app/api/process/route.ts)
+- Made blob upload conditional based on settings
+- Handles case when blob is disabled gracefully
+
+### ✅ Phase 5: Main App Integration (app/page.tsx)
+- Pass new settings to ResultsTable
+- Pass blob setting to API calls via options
+- Added API status checking
 

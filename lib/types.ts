@@ -41,7 +41,10 @@ export interface UISettings {
   queueDensity: QueueDensity
   showCompletedImages: boolean
   resultsPageSize: number
+  blobStorageEnabled: boolean
 }
+
+export type TablePageSize = 25 | 50 | 100 | 200
 
 // Column mapping: original key -> display name
 export interface ColumnMapping {

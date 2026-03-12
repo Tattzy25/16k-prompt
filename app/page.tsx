@@ -1,16 +1,38 @@
 'use client'
 
-import { useState, useCallback, useRef, useMemo } from 'react'
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react'
 import { StatusCards } from '@/components/status-cards'
 import { ImageDropzone } from '@/components/image-dropzone'
 import { ImageGallery } from '@/components/image-gallery'
 import { ResultsTable } from '@/components/results-table'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { SettingsPanel } from '@/components/settings-panel'
-import type { BatchStatus, ImageFile, ResultRow, ColumnSettings } from '@/lib/types'
+import type { BatchStatus, ImageFile, ResultRow, ColumnSettings, TablePageSize } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const MAX_RETRIES = 3
+
+// UI Settings stored in localStorage
+interface UISettings {
+  blobStorageEnabled: boolean
+  tablePageSize: TablePageSize
+}
+
+const DEFAULT_UI_SETTINGS: UISettings = {
+  blobStorageEnabled: true,
+  tablePageSize: 50
+}
+
+function loadUISettings(): UISettings {
+  if (typeof window === 'undefined') return DEFAULT_UI_SETTINGS
+  try {
+    const stored = localStorage.getItem('batch-processor-ui-settings')
+    if (stored) return JSON.parse(stored)
+  } catch (e) {
+    console.error('Failed to load UI settings:', e)
+  }
+  return DEFAULT_UI_SETTINGS
+}
 
 export default function BatchProcessor() {
   const [status, setStatus] = useState<BatchStatus>('idle')
@@ -25,6 +47,32 @@ export default function BatchProcessor() {
     mappings: [],
     customColumns: []
   })
+  
+  // UI Settings
+  const [uiSettings, setUiSettings] = useState<UISettings>(DEFAULT_UI_SETTINGS)
+  const [apiStatus, setApiStatus] = useState<'connected' | 'disconnected' | 'checking'>('checking')
+
+  // Initialize UI settings on mount
+  useEffect(() => {
+    const loaded = loadUISettings()
+    setUiSettings(loaded)
+    
+    // Check API status on mount
+    checkApiStatus()
+  }, [])
+
+  const checkApiStatus = async () => {
+    setApiStatus('checking')
+    try {
+      const response = await fetch('/api/process', {
+        method: 'HEAD',
+      })
+      // If we get any response (even error), API is reachable
+      setApiStatus('connected')
+    } catch {
+      setApiStatus('disconnected')
+    }
+  }
 
   // Get all unique columns from results for the settings panel
   const availableColumns = useMemo(() => {
@@ -36,8 +84,9 @@ export default function BatchProcessor() {
     return Array.from(allKeys)
   }, [results])
 
-  const handleColumnSettingsSave = useCallback((settings: ColumnSettings) => {
+  const handleColumnSettingsSave = useCallback((settings: ColumnSettings, newUiSettings: UISettings) => {
     setColumnSettings(settings)
+    setUiSettings(newUiSettings)
   }, [])
 
   const handleImagesAdded = useCallback((newImages: ImageFile[]) => {
@@ -93,6 +142,10 @@ export default function BatchProcessor() {
         image: {
           name: image.name,
           base64,
+        },
+        // Pass blob storage setting to backend
+        options: {
+          enableBlobStorage: uiSettings.blobStorageEnabled,
         },
       }),
       signal,
@@ -549,6 +602,10 @@ export default function BatchProcessor() {
               onExportCSV={exportCSV}
               onExportJSON={exportJSON}
               columnSettings={columnSettings}
+              pageSize={uiSettings.tablePageSize}
+              onPageSizeChange={(size) => {
+                setUiSettings(prev => ({ ...prev, tablePageSize: size }))
+              }}
             />
           </div>
 
@@ -558,9 +615,13 @@ export default function BatchProcessor() {
             availableColumns={availableColumns}
             columnSettings={columnSettings}
             onSave={handleColumnSettingsSave}
+            blobStorageEnabled={uiSettings.blobStorageEnabled}
+            tablePageSize={uiSettings.tablePageSize}
+            apiStatus={apiStatus}
           />
         </div>
       </div>
     </main>
   );
 }
+
