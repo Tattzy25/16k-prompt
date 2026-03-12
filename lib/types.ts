@@ -42,3 +42,16 @@ export interface UISettings {
   showCompletedImages: boolean
   resultsPageSize: number
 }
+
+// Column mapping: original key -> display name
+export interface ColumnMapping {
+  key: string
+  displayName: string
+  visible: boolean
+}
+
+// Column settings stored in localStorage
+export interface ColumnSettings {
+  mappings: ColumnMapping[]
+  customColumns: string[]
+}

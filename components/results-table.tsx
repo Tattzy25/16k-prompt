@@ -2,19 +2,26 @@
 
 import { useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
-import type { ResultRow } from '@/lib/types'
+import type { ResultRow, ColumnSettings } from '@/lib/types'
 
 interface ResultsTableProps {
   data: ResultRow[]
   onExportCSV: () => void
   onExportJSON: () => void
+  columnSettings?: ColumnSettings
 }
 
-export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTableProps) {
+export function ResultsTable({ 
+  data, 
+  onExportCSV, 
+  onExportJSON,
+  columnSettings 
+}: ResultsTableProps) {
   const [sortColumn, setSortColumn] = useState<string | null>(null)
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
-  const columns = useMemo(() => {
+  // Get all unique columns from data
+  const allColumns = useMemo(() => {
     if (data.length === 0) return []
     const allKeys = new Set<string>()
     data.forEach(row => {
@@ -22,6 +29,29 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
     })
     return Array.from(allKeys)
   }, [data])
+
+  // Get visible columns with their display names
+  const columns = useMemo(() => {
+    const settingsMap = new Map(
+      (columnSettings?.mappings || []).map(m => [m.key, m])
+    )
+    
+    return allColumns.map(key => {
+      const setting = settingsMap.get(key)
+      return {
+        key,
+        displayName: setting?.displayName || key,
+        visible: setting?.visible !== false // default to visible
+      }
+    }).filter(col => col.visible)
+  }, [allColumns, columnSettings])
+
+  // Build a map for sorting - map display name back to key
+  const displayToKeyMap = useMemo(() => {
+    const map = new Map<string, string>()
+    columns.forEach(col => map.set(col.displayName, col.key))
+    return map
+  }, [columns])
 
   const sortedData = useMemo(() => {
     if (!sortColumn) return data
@@ -36,11 +66,14 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
     })
   }, [data, sortColumn, sortDirection])
 
-  const handleSort = (column: string) => {
-    if (sortColumn === column) {
+  const handleSort = (displayName: string) => {
+    const key = displayToKeyMap.get(displayName)
+    if (!key) return
+    
+    if (sortColumn === key) {
       setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'))
     } else {
-      setSortColumn(column)
+      setSortColumn(key)
       setSortDirection('asc')
     }
   }
@@ -55,6 +88,17 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
     return null
   }
 
+  // Get the original data key for a display name
+  const getDataKey = (displayName: string): string => {
+    // First check if there's a mapping
+    if (columnSettings?.mappings) {
+      const mapping = columnSettings.mappings.find(m => m.displayName === displayName)
+      if (mapping) return mapping.key
+    }
+    // Otherwise assume display name equals key
+    return displayName
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -63,6 +107,11 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
           <span className="ml-2 font-mono text-xs text-muted-foreground">
             {data.length} {data.length === 1 ? 'row' : 'rows'}
           </span>
+          {columnSettings && columnSettings.mappings.length > 0 && (
+            <span className="ml-2 text-xs text-muted-foreground">
+              ({columns.length} visible columns)
+            </span>
+          )}
         </h3>
         <div className="flex items-center gap-2">
           <button
@@ -93,13 +142,13 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
               <tr className="border-b border-border/50 bg-muted/30">
                 {columns.map(column => (
                   <th
-                    key={column}
-                    onClick={() => handleSort(column)}
+                    key={column.key}
+                    onClick={() => handleSort(column.displayName)}
                     className="cursor-pointer px-4 py-3 text-left font-medium text-foreground transition-colors hover:bg-muted/50"
                   >
                     <div className="flex items-center gap-1.5">
-                      <span className="truncate">{column}</span>
-                      {sortColumn === column && (
+                      <span className="truncate">{column.displayName}</span>
+                      {sortColumn === column.key && (
                         <svg
                           className={cn('h-3.5 w-3.5 flex-shrink-0 transition-transform', sortDirection === 'desc' && 'rotate-180')}
                           fill="none"
@@ -125,8 +174,8 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
                   )}
                 >
                   {columns.map(column => (
-                    <td key={column} className="px-4 py-3 text-muted-foreground">
-                      <span className="block max-w-xs truncate">{formatCellValue(row[column])}</span>
+                    <td key={column.key} className="px-4 py-3 text-muted-foreground">
+                      <span className="block max-w-xs truncate">{formatCellValue(row[column.key])}</span>
                     </td>
                   ))}
                 </tr>
@@ -138,3 +187,4 @@ export function ResultsTable({ data, onExportCSV, onExportJSON }: ResultsTablePr
     </div>
   )
 }
+

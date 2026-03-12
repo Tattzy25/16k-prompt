@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { StatusCards } from '@/components/status-cards'
 import { ImageDropzone } from '@/components/image-dropzone'
 import { ImageGallery } from '@/components/image-gallery'
 import { ResultsTable } from '@/components/results-table'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { SettingsPanel } from '@/components/settings-panel'
-import type { BatchStatus, ImageFile, ResultRow } from '@/lib/types'
+import type { BatchStatus, ImageFile, ResultRow, ColumnSettings } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 const MAX_RETRIES = 3
@@ -21,6 +21,24 @@ export default function BatchProcessor() {
   const [currentProcessingIndex, setCurrentProcessingIndex] = useState(-1)
   const abortControllerRef = useRef<AbortController | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [columnSettings, setColumnSettings] = useState<ColumnSettings>({
+    mappings: [],
+    customColumns: []
+  })
+
+  // Get all unique columns from results for the settings panel
+  const availableColumns = useMemo(() => {
+    if (results.length === 0) return []
+    const allKeys = new Set<string>()
+    results.forEach(row => {
+      Object.keys(row).forEach(key => allKeys.add(key))
+    })
+    return Array.from(allKeys)
+  }, [results])
+
+  const handleColumnSettingsSave = useCallback((settings: ColumnSettings) => {
+    setColumnSettings(settings)
+  }, [])
 
   const handleImagesAdded = useCallback((newImages: ImageFile[]) => {
     const imagesWithStatus = newImages.map(img => ({
@@ -530,10 +548,17 @@ export default function BatchProcessor() {
               data={results}
               onExportCSV={exportCSV}
               onExportJSON={exportJSON}
+              columnSettings={columnSettings}
             />
           </div>
 
-          <SettingsPanel open={settingsOpen} onOpenChange={setSettingsOpen} />
+          <SettingsPanel 
+            open={settingsOpen} 
+            onOpenChange={setSettingsOpen}
+            availableColumns={availableColumns}
+            columnSettings={columnSettings}
+            onSave={handleColumnSettingsSave}
+          />
         </div>
       </div>
     </main>

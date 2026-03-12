@@ -1,123 +1,277 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
   DialogDescription,
+  DialogFooter,
 } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-
-// Very small, focused settings panel: no fake switches, only controls
-// that help you reason about columns & mapping.
+import { Badge } from '@/components/ui/badge'
+import type { ColumnMapping, ColumnSettings } from '@/lib/types'
 
 interface SettingsPanelProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  availableColumns: string[]
+  columnSettings: ColumnSettings
+  onSave: (settings: ColumnSettings) => void
 }
 
-export function SettingsPanel({ open, onOpenChange }: SettingsPanelProps) {
-  // Local notes-only state – this does not change any logic yet.
-  const [visibleColumnsNote, setVisibleColumnsNote] = useState('')
-  const [mappingNotes, setMappingNotes] = useState('')
+const STORAGE_KEY = 'batch-processor-column-settings'
+
+function loadSettings(): ColumnSettings {
+  if (typeof window === 'undefined') {
+    return { mappings: [], customColumns: [] }
+  }
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    if (stored) {
+      return JSON.parse(stored)
+    }
+  } catch (e) {
+    console.error('Failed to load settings:', e)
+  }
+  return { mappings: [], customColumns: [] }
+}
+
+function saveSettings(settings: ColumnSettings) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings))
+  } catch (e) {
+    console.error('Failed to save settings:', e)
+  }
+}
+
+export function SettingsPanel({
+  open,
+  onOpenChange,
+  availableColumns,
+  columnSettings,
+  onSave,
+}: SettingsPanelProps) {
+  const [mappings, setMappings] = useState<ColumnMapping[]>([])
+  const [customColumns, setCustomColumns] = useState<string[]>([])
+  const [newColumnKey, setNewColumnKey] = useState('')
+
+  // Initialize from props when dialog opens
+  useEffect(() => {
+    if (open) {
+      setMappings([...columnSettings.mappings])
+      setCustomColumns([...columnSettings.customColumns])
+    }
+  }, [open, columnSettings])
+
+  // Sync available columns that aren't in mappings yet
+  const getAllColumns = () => {
+    const mappedKeys = new Set(mappings.map((m) => m.key))
+    const available = availableColumns
+      .filter((col) => !mappedKeys.has(col))
+      .map((col) => ({ key: col, displayName: col, visible: true }))
+    return [...mappings, ...available]
+  }
+
+  const handleAddColumn = () => {
+    if (newColumnKey.trim() && !customColumns.includes(newColumnKey.trim())) {
+      const key = newColumnKey.trim()
+      setCustomColumns([...customColumns, key])
+      setMappings([
+        ...mappings,
+        { key, displayName: key, visible: true },
+      ])
+      setNewColumnKey('')
+    }
+  }
+
+  const handleRemoveColumn = (key: string) => {
+    setMappings(mappings.filter((m) => m.key !== key))
+    setCustomColumns(customColumns.filter((c) => c !== key))
+  }
+
+  const handleToggleVisibility = (key: string) => {
+    setMappings(
+      mappings.map((m) =>
+        m.key === key ? { ...m, visible: !m.visible } : m
+      )
+    )
+  }
+
+  const handleDisplayNameChange = (key: string, newName: string) => {
+    setMappings(
+      mappings.map((m) =>
+        m.key === key ? { ...m, displayName: newName } : m
+      )
+    )
+  }
+
+  const handleReset = () => {
+    setMappings([])
+    setCustomColumns([])
+  }
+
+  const handleSave = () => {
+    const settings: ColumnSettings = {
+      mappings: getAllColumns().filter((m) => m.visible || m.displayName !== m.key),
+      customColumns,
+    }
+    saveSettings(settings)
+    onSave(settings)
+    onOpenChange(false)
+  }
+
+  const allColumns = getAllColumns()
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl w-full gap-6 p-6 sm:p-8" showCloseButton>
         <DialogHeader>
-          <DialogTitle>Batch Processor Settings</DialogTitle>
+          <DialogTitle>Column Settings</DialogTitle>
           <DialogDescription>
-            Helper settings for how results are displayed. These do not call Dify or
-            Shopify directly yet – they exist so you can keep track of how columns are
-            mapped and how you want them to look.
+            Manage which columns to display in the results table and how they should be labeled.
           </DialogDescription>
         </DialogHeader>
 
-        <ScrollArea className="max-h-[70vh] pr-3">
-          <div className="space-y-8 text-sm text-foreground">
-            {/* Results table / columns section */}
+        <ScrollArea className="max-h-[60vh] pr-3">
+          <div className="space-y-6">
+            {/* Column List */}
             <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight">Results table</h2>
+              <h2 className="text-base font-semibold tracking-tight">Columns</h2>
               <p className="text-xs text-muted-foreground">
-                These controls describe how you want the table to behave. Right now they
-                are notes for yourself – implementation wiring can be done later without
-                touching this UI.
+                Toggle visibility and rename columns from the incoming data.
               </p>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Columns you care about
-                  </label>
-                  <textarea
-                    className="min-h-[120px] w-full rounded-md border border-border bg-card px-3 py-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                    placeholder={
-                      'One per line, e.g.\nTitle\nSEO Title\nSEO Description\nBody\nProduct URL\nImage URL\nSku'
-                    }
-                    value={visibleColumnsNote}
-                    onChange={e => setVisibleColumnsNote(e.target.value)}
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    This is just a list for you. Later we can wire it so hidden columns
-                    never show up in the UI/CSV.
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-muted-foreground">
-                    Mapping notes (Dify → column)
-                  </label>
-                  <textarea
-                    className="min-h-[120px] w-full rounded-md border border-border bg-card px-3 py-2 text-xs outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
-                    placeholder={
-                      'Example:\nBody = just long description (no SEO Title / SEO Description lines)\nImage URL = products/{sku}.png\nNew fields I want: Meta Keywords, FAQ, Upsell Handle, ...'
-                    }
-                    value={mappingNotes}
-                    onChange={e => setMappingNotes(e.target.value)}
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Use this to write exactly how you expect each header to behave. It
-                    keeps the contract clear when wiring the API or Shopify sync.
-                  </p>
-                </div>
+              <div className="rounded-md border border-border">
+                {allColumns.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-muted-foreground">
+                    No columns available. Process some images first to see the data columns.
+                  </div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/50">
+                        <th className="px-3 py-2 text-left font-medium">Visible</th>
+                        <th className="px-3 py-2 text-left font-medium">Original Header</th>
+                        <th className="px-3 py-2 text-left font-medium">Display Name</th>
+                        <th className="px-3 py-2 text-right font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allColumns.map((col) => (
+                        <tr key={col.key} className="border-b border-border/50">
+                          <td className="px-3 py-2">
+                            <button
+                              onClick={() => handleToggleVisibility(col.key)}
+                              className={`flex h-5 w-9 items-center rounded-full p-1 transition-colors ${
+                                col.visible ? 'bg-primary' : 'bg-muted'
+                              }`}
+                            >
+                              <div
+                                className={`h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                                  col.visible ? 'translate-x-4' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                          </td>
+                          <td className="px-3 py-2">
+                            <code className="text-xs bg-muted px-1.5 py-0.5 rounded">
+                              {col.key}
+                            </code>
+                          </td>
+                          <td className="px-3 py-2">
+                            <Input
+                              value={col.displayName}
+                              onChange={(e) => handleDisplayNameChange(col.key, e.target.value)}
+                              className="h-8 text-xs"
+                              placeholder="Display name"
+                            />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveColumn(col.key)}
+                              className="h-7 text-destructive hover:text-destructive"
+                            >
+                              Remove
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             </section>
 
-            {/* Batch behavior (high-level only) */}
+            {/* Add Custom Column */}
             <section className="space-y-3">
-              <h2 className="text-base font-semibold tracking-tight">Batch behavior</h2>
+              <h2 className="text-base font-semibold tracking-tight">Add Custom Column</h2>
               <p className="text-xs text-muted-foreground">
-                These describe how retries and failures should work. They are not wired
-                to logic yet; they document the rules you actually want.
+                Add a new column header that doesn't exist in the data yet.
               </p>
 
+              <div className="flex gap-2">
+                <Input
+                  value={newColumnKey}
+                  onChange={(e) => setNewColumnKey(e.target.value)}
+                  placeholder="Column key (e.g., Meta Keywords)"
+                  className="h-9"
+                  onKeyDown={(e) => e.key === 'Enter' && handleAddColumn()}
+                />
+                <Button onClick={handleAddColumn} size="sm">
+                  Add
+                </Button>
+              </div>
+
+              {customColumns.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {customColumns.map((col) => (
+                    <Badge key={col} variant="secondary" className="gap-1">
+                      {col}
+                      <button
+                        onClick={() => handleRemoveColumn(col)}
+                        className="ml-1 hover:text-destructive"
+                      >
+                        ×
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </section>
+
+            {/* Batch behavior (read-only info) */}
+            <section className="space-y-3">
+              <h2 className="text-base font-semibold tracking-tight">Batch behavior</h2>
               <ul className="list-disc space-y-1 pl-5 text-xs text-muted-foreground">
-                <li>Retries per image: currently hard-coded to 3.</li>
-                <li>
-                  After one image fails all retries: skip it and continue to the next.
-                </li>
-                <li>
-                  After two images in a row fail all retries: stop the batch and mark as
-                  failed.
-                </li>
+                <li>Retries per image: 3</li>
+                <li>After one image fails all retries: skip it and continue to the next.</li>
+                <li>After two images in a row fail all retries: stop the batch and mark as failed.</li>
               </ul>
             </section>
           </div>
         </ScrollArea>
 
-        <div className="flex items-center justify-end gap-2 pt-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => onOpenChange(false)}
-          >
-            Close
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button variant="outline" size="sm" onClick={handleReset}>
+            Reset to Defaults
           </Button>
-        </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSave}>
+              Save Changes
+            </Button>
+          </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
 }
+
